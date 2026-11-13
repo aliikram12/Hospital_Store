@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary: #0284c7;
+    --primary-hover: #0369a1;
+    --secondary: #0f172a;
+    --accent: #10b981;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased font-sans selection:bg-sky-500 selection:text-white;
+  }
+}
+
+/* Custom smooth animations & scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(2, 132, 199, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(2, 132, 199, 0.45);
+  }
+}
+
+.glow-hover:hover {
+  animation: pulseGlow 2s infinite;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
