@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ToastProvider } from './context/ToastContext';
 import { CartProvider } from './context/CartContext';
+import { CurrencyProvider } from './context/CurrencyContext';
+
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import CartDrawer from './components/CartDrawer';
@@ -21,6 +23,7 @@ import AdminProducts from './pages/admin/AdminProducts';
 import AdminCategories from './pages/admin/AdminCategories';
 import AdminOrders from './pages/admin/AdminOrders';
 import AdminQuotes from './pages/admin/AdminQuotes';
+import AdminUsers from './pages/admin/AdminUsers';
 import AdminSettings from './pages/admin/AdminSettings';
 
 function MainApp() {
@@ -59,7 +62,7 @@ function MainApp() {
   }, []);
 
   // Fetch categories and featured products on start
-  useEffect(() => {
+  const refreshGlobalData = () => {
     fetch('/api/categories')
       .then((r) => r.json())
       .then((data) => setCategories(data))
@@ -69,6 +72,10 @@ function MainApp() {
       .then((r) => r.json())
       .then((data) => setFeaturedProducts(data.products || []))
       .catch((e) => console.error('Failed to load products', e));
+  };
+
+  useEffect(() => {
+    refreshGlobalData();
   }, []);
 
   const navigate = (view, params = {}) => {
@@ -110,6 +117,7 @@ function MainApp() {
         )}
         {adminTab === 'orders' && <AdminOrders />}
         {adminTab === 'quotes' && <AdminQuotes />}
+        {adminTab === 'users' && <AdminUsers />}
         {adminTab === 'settings' && <AdminSettings />}
       </AdminLayout>
     );
@@ -174,7 +182,7 @@ function MainApp() {
 
       <Footer onNavigate={navigate} />
 
-      {/* Persistent global drawers & modals */}
+      {/* Global drawers & modals */}
       <CartDrawer onNavigate={navigate} />
       <QuickQuoteModal />
     </div>
@@ -184,9 +192,11 @@ function MainApp() {
 export default function App() {
   return (
     <ToastProvider>
-      <CartProvider>
-        <MainApp />
-      </CartProvider>
+      <CurrencyProvider>
+        <CartProvider>
+          <MainApp />
+        </CartProvider>
+      </CurrencyProvider>
     </ToastProvider>
   );
 }

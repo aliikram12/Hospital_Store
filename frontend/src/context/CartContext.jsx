@@ -26,33 +26,33 @@ export const CartProvider = ({ children }) => {
   }, [cartItems]);
 
   const addToCart = (product, quantity = 1) => {
-    setCartItems((prevItems) => {
-      const existing = prevItems.find((item) => item.id === product.id);
-      if (existing) {
-        addToast(`Updated quantity for "${product.name.slice(0, 30)}..." in your cart`, 'info');
-        return prevItems.map((item) =>
+    const existing = cartItems.find((item) => item.id === product.id);
+    if (existing) {
+      addToast(`Updated quantity for "${product.name.slice(0, 30)}..." in your cart`, 'info');
+      setCartItems((prev) =>
+        prev.map((item) =>
           item.id === product.id
             ? { ...item, quantity: Math.min(item.quantity + quantity, product.stock_quantity || 99) }
             : item
-        );
-      } else {
-        addToast(`Added "${product.name.slice(0, 30)}..." to your cart`, 'success');
-        return [
-          ...prevItems,
-          {
-            id: product.id,
-            name: product.name,
-            slug: product.slug,
-            brand: product.brand,
-            price: product.price,
-            original_price: product.original_price,
-            image_url: product.image_url,
-            stock_quantity: product.stock_quantity,
-            quantity: Math.max(1, quantity)
-          }
-        ];
-      }
-    });
+        )
+      );
+    } else {
+      addToast(`Added "${product.name.slice(0, 30)}..." to your cart`, 'success');
+      setCartItems((prev) => [
+        ...prev,
+        {
+          id: product.id,
+          name: product.name,
+          slug: product.slug,
+          brand: product.brand,
+          price: product.price,
+          original_price: product.original_price,
+          image_url: product.image_url,
+          stock_quantity: product.stock_quantity,
+          quantity: Math.max(1, quantity)
+        }
+      ]);
+    }
   };
 
   const updateQuantity = (productId, newQuantity) => {
@@ -68,23 +68,21 @@ export const CartProvider = ({ children }) => {
   };
 
   const removeFromCart = (productId) => {
-    setCartItems((prev) => {
-      const item = prev.find((i) => i.id === productId);
-      if (item) {
-        addToast(`Removed "${item.name.slice(0, 25)}..." from cart`, 'info');
-      }
-      return prev.filter((i) => i.id !== productId);
-    });
+    const item = cartItems.find((i) => i.id === productId);
+    if (item) {
+      addToast(`Removed "${item.name.slice(0, 25)}..." from cart`, 'info');
+    }
+    setCartItems((prev) => prev.filter((i) => i.id !== productId));
   };
 
   const clearCart = () => {
     setCartItems([]);
   };
 
-  // Price metrics
+  // Price metrics (stored in base PKR)
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const taxAmount = Math.round(subtotal * 0.12); // 12% GST standard on medical equipment
+  const taxAmount = Math.round(subtotal * 0.12); // 12% GST standard
   const shippingFee = subtotal >= 5000 || subtotal === 0 ? 0 : 250;
   const totalAmount = subtotal + taxAmount + shippingFee;
 
@@ -128,4 +126,3 @@ export const useCart = () => {
   }
   return context;
 };
-

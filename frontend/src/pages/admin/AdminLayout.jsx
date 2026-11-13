@@ -25,6 +25,7 @@ export default function AdminLayout({ activeTab, onTabChange, onExitAdmin, child
     { id: 'categories', label: 'Specialty Categories', icon: Layers },
     { id: 'orders', label: 'Orders & GST Billing', icon: ShoppingCart },
     { id: 'quotes', label: 'Hospital RFQ Quotations', icon: FileSpreadsheet },
+    { id: 'users', label: 'Hospital Buyers & Accounts', icon: UserCheck },
     { id: 'settings', label: 'Store & Tax Settings', icon: Settings }
   ];
 

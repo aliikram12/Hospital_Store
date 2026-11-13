@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Printer, Download, ShieldCheck, HeartPulse } from 'lucide-react';
-import { formatPrice } from '../utils/helpers';
+import { useCurrency } from '../context/CurrencyContext';
 
 export default function InvoiceModal({ orderId, onClose }) {
+  const { formatPrice } = useCurrency();
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -68,7 +69,7 @@ export default function InvoiceModal({ orderId, onClose }) {
                   </div>
                   <p className="font-bold text-slate-900">{invoice.seller.name}</p>
                   <p className="text-slate-500">{invoice.seller.address}</p>
-                  <p className="text-slate-700 font-mono font-semibold">GSTIN: {invoice.seller.gstin} | PAN: {invoice.seller.pan}</p>
+                  <p className="text-slate-700 font-mono font-semibold">NTN: {invoice.seller.pan} | GST: {invoice.seller.gstin}</p>
                   <p className="text-slate-500">Support: {invoice.seller.phone} • {invoice.seller.email}</p>
                 </div>
 
@@ -79,6 +80,7 @@ export default function InvoiceModal({ orderId, onClose }) {
                   <p className="font-mono text-sm font-black text-slate-900 mt-2">{invoice.invoice_number}</p>
                   <p className="text-slate-500">Date: {invoice.invoice_date}</p>
                   <p className="text-slate-700 font-semibold">Order: {invoice.order_details.order_number}</p>
+                  <p className="text-sky-600 font-bold font-mono">Currency: {invoice.currency} (Rate: {invoice.exchange_rate})</p>
                 </div>
               </div>
 
@@ -90,7 +92,7 @@ export default function InvoiceModal({ orderId, onClose }) {
                   <p className="text-slate-700 font-medium">Attn: {invoice.buyer.name}</p>
                   <p className="text-slate-500">{invoice.buyer.address}</p>
                   <p className="text-slate-500">Phone: {invoice.buyer.phone} • {invoice.buyer.email}</p>
-                  <p className="text-slate-800 font-mono font-bold mt-1">Buyer GSTIN: {invoice.buyer.gstin}</p>
+                  <p className="text-slate-800 font-mono font-bold mt-1">Buyer NTN/GST: {invoice.buyer.gstin}</p>
                 </div>
 
                 <div className="space-y-1 border-l border-slate-200 pl-4">
@@ -100,6 +102,9 @@ export default function InvoiceModal({ orderId, onClose }) {
                   <p><span className="text-slate-500">Dispatch Status:</span> <span className="font-bold">{invoice.order_details.dispatch_status}</span></p>
                   <p><span className="text-slate-500">Carrier:</span> <span className="font-medium">{invoice.order_details.courier}</span></p>
                   <p><span className="text-slate-500">Tracking No:</span> <span className="font-mono font-bold">{invoice.order_details.tracking_number}</span></p>
+                  {invoice.order_details.transaction_ref && (
+                    <p><span className="text-slate-500">Trx Ref:</span> <span className="font-mono font-bold text-sky-700">{invoice.order_details.transaction_ref}</span></p>
+                  )}
                 </div>
               </div>
 
@@ -112,11 +117,10 @@ export default function InvoiceModal({ orderId, onClose }) {
                       <th className="p-2 border border-slate-200">Description of Medical Goods</th>
                       <th className="p-2 border border-slate-200 text-center">HSN</th>
                       <th className="p-2 border border-slate-200 text-center">Qty</th>
-                      <th className="p-2 border border-slate-200 text-right">Rate (₹)</th>
-                      <th className="p-2 border border-slate-200 text-right">Taxable (₹)</th>
-                      <th className="p-2 border border-slate-200 text-right">CGST (6%)</th>
-                      <th className="p-2 border border-slate-200 text-right">SGST (6%)</th>
-                      <th className="p-2 border border-slate-200 text-right">Total (₹)</th>
+                      <th className="p-2 border border-slate-200 text-right">Rate</th>
+                      <th className="p-2 border border-slate-200 text-right">Taxable</th>
+                      <th className="p-2 border border-slate-200 text-right">GST (12%)</th>
+                      <th className="p-2 border border-slate-200 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -126,10 +130,9 @@ export default function InvoiceModal({ orderId, onClose }) {
                         <td className="p-2 border border-slate-200 font-semibold">{item.name}</td>
                         <td className="p-2 border border-slate-200 text-center font-mono">{item.hsn}</td>
                         <td className="p-2 border border-slate-200 text-center">{item.qty}</td>
-                        <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.unit_price)}</td>
+                        <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.unit_price_pkr)}</td>
                         <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.taxable_value)}</td>
-                        <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.cgst_amount)}</td>
-                        <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.sgst_amount)}</td>
+                        <td className="p-2 border border-slate-200 text-right font-mono">{formatPrice(item.cgst_amount + item.sgst_amount)}</td>
                         <td className="p-2 border border-slate-200 text-right font-black font-mono">{formatPrice(item.total)}</td>
                       </tr>
                     ))}
@@ -141,37 +144,32 @@ export default function InvoiceModal({ orderId, onClose }) {
               <div className="flex justify-between items-start pt-2">
                 <div className="max-w-xs space-y-2 text-slate-500 text-[11px]">
                   <p className="font-bold text-slate-700">Terms & Conditions:</p>
-                  <p>1. Goods sold are medical-grade equipment covered under OEM manufacturer warranty.</p>
-                  <p>2. Input tax credit is available to hospitals and registered healthcare institutions.</p>
-                  <p>3. Subject to Delhi jurisdiction only.</p>
+                  <p>1. Certified hospital-grade equipment covered under OEM warranty.</p>
+                  <p>2. Payment verified via selected mode ({invoice.order_details.payment_method}).</p>
                 </div>
 
                 <div className="w-72 space-y-2 border border-slate-200 rounded-xl p-3 bg-slate-50/80">
                   <div className="flex justify-between text-slate-600">
-                    <span>Taxable Amount:</span>
-                    <span className="font-semibold font-mono">{formatPrice(invoice.summary.subtotal)}</span>
+                    <span>Subtotal:</span>
+                    <span className="font-semibold font-mono">{formatPrice(invoice.summary.subtotal_pkr)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>Central GST (CGST 6%):</span>
-                    <span className="font-semibold font-mono">{formatPrice(invoice.summary.cgst)}</span>
+                    <span>GST (12%):</span>
+                    <span className="font-semibold font-mono">{formatPrice(invoice.summary.total_tax_pkr)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>State GST (SGST 6%):</span>
-                    <span className="font-semibold font-mono">{formatPrice(invoice.summary.sgst)}</span>
+                    <span>Logistics Shipping:</span>
+                    <span className="font-semibold">{invoice.summary.shipping_fee_pkr === 0 ? 'FREE' : formatPrice(invoice.summary.shipping_fee_pkr)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Biomedical Shipping:</span>
-                    <span className="font-semibold">{invoice.summary.shipping_fee === 0 ? 'FREE' : formatPrice(invoice.summary.shipping_fee)}</span>
-                  </div>
-                  {invoice.summary.discount > 0 && (
+                  {invoice.summary.discount_pkr > 0 && (
                     <div className="flex justify-between text-emerald-600 font-semibold">
-                      <span>Discount Applied:</span>
-                      <span className="font-mono">-{formatPrice(invoice.summary.discount)}</span>
+                      <span>Discount:</span>
+                      <span className="font-mono">-{formatPrice(invoice.summary.discount_pkr)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-300">
                     <span>Invoice Grand Total:</span>
-                    <span className="text-sky-700 font-mono">{formatPrice(invoice.summary.grand_total)}</span>
+                    <span className="text-sky-700 font-mono">{formatPrice(invoice.summary.grand_total_pkr, true)}</span>
                   </div>
                 </div>
               </div>
@@ -179,7 +177,7 @@ export default function InvoiceModal({ orderId, onClose }) {
               {/* Signature & Stamp */}
               <div className="pt-8 flex justify-between items-end border-t border-slate-200">
                 <div className="text-[10px] text-slate-400">
-                  This is a computer-generated tax invoice verified electronically under GST Rules 2017.
+                  Computer-generated official tax invoice verified electronically.
                 </div>
                 <div className="text-center space-y-1">
                   <div className="w-32 h-14 border border-dashed border-sky-400 rounded-lg flex items-center justify-center bg-sky-50/40 text-[10px] text-sky-800 font-bold mx-auto">
@@ -196,4 +194,3 @@ export default function InvoiceModal({ orderId, onClose }) {
     </div>
   );
 }
-

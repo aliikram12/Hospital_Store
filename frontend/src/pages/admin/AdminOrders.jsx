@@ -12,14 +12,17 @@ import {
   X,
   CreditCard,
   Building2,
-  ExternalLink
+  ExternalLink,
+  Image as ImageIcon,
+  QrCode
 } from 'lucide-react';
-import { formatPrice } from '../../utils/helpers';
+import { useCurrency } from '../../context/CurrencyContext';
 import { useToast } from '../../context/ToastContext';
 import InvoiceModal from '../../components/InvoiceModal';
 
 export default function AdminOrders() {
   const { addToast } = useToast();
+  const { formatPrice } = useCurrency();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('All');
@@ -29,14 +32,17 @@ export default function AdminOrders() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [statusFormData, setStatusFormData] = useState({
     order_status: 'Processing',
-    payment_status: 'Paid',
+    payment_status: 'Pending Verification',
     tracking_courier: '',
     tracking_number: '',
+    payment_proof_image: '',
+    transaction_ref: '',
     notes: ''
   });
 
-  // Invoice Modal
+  // Invoice Modal & Receipt Zoom Modal
   const [activeInvoiceId, setActiveInvoiceId] = useState(null);
+  const [previewProofImage, setPreviewProofImage] = useState(null);
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -65,8 +71,10 @@ export default function AdminOrders() {
     setStatusFormData({
       order_status: order.order_status,
       payment_status: order.payment_status,
-      tracking_courier: order.tracking_courier || 'BlueDart Health Express',
+      tracking_courier: order.tracking_courier || 'TCS Express Medical Cargo',
       tracking_number: order.tracking_number || '',
+      payment_proof_image: order.payment_proof_image || '',
+      transaction_ref: order.transaction_ref || '',
       notes: order.notes || ''
     });
   };
@@ -107,13 +115,13 @@ export default function AdminOrders() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white">Hospital Orders & GST Invoicing</h1>
+          <h1 className="text-xl font-bold text-white">Hospital Consignments & Billing</h1>
           <p className="text-xs text-slate-400">
-            Process consignments, update courier airway bills, and issue B2B tax invoices
+            Verify payment screenshots (SS), assign courier tracking, and generate B2B tax invoices
           </p>
         </div>
       </div>
@@ -124,7 +132,7 @@ export default function AdminOrders() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by order #, hospital name, doctor, phone, or AWB tracking..."
+            placeholder="Search by order #, hospital, doctor, transaction ID or tracking..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full bg-slate-900 border border-slate-800 text-white pl-9 pr-3 py-2 text-xs rounded-xl outline-none focus:border-sky-500"
@@ -138,7 +146,6 @@ export default function AdminOrders() {
             className="bg-slate-900 border border-slate-800 text-white px-3 py-2 text-xs rounded-xl outline-none focus:border-sky-500 w-full sm:w-auto"
           >
             <option value="All">All Statuses</option>
-            <option value="Pending">Pending Confirmation</option>
             <option value="Processing">Processing & Quality Check</option>
             <option value="Dispatched">Dispatched / In Transit</option>
             <option value="Delivered">Delivered</option>
@@ -155,9 +162,9 @@ export default function AdminOrders() {
               <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-500 uppercase bg-slate-950/80">
                 <th className="py-3.5 px-4">Order Ref #</th>
                 <th className="py-3.5 px-4">Hospital / Buyer</th>
-                <th className="py-3.5 px-4">Items Summary</th>
-                <th className="py-3.5 px-4">Total Value</th>
-                <th className="py-3.5 px-4">Payment</th>
+                <th className="py-3.5 px-4">Equipment Items</th>
+                <th className="py-3.5 px-4">Total Amount</th>
+                <th className="py-3.5 px-4">Payment Method & Proof</th>
                 <th className="py-3.5 px-4">Shipment Status</th>
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
@@ -166,13 +173,13 @@ export default function AdminOrders() {
               {loading ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-slate-500">
-                    Loading orders...
+                    Loading hospital orders...
                   </td>
                 </tr>
               ) : orders.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="py-12 text-center text-slate-500">
-                    No hospital orders found.
+                    No orders found matching criteria.
                   </td>
                 </tr>
               ) : (
@@ -181,7 +188,7 @@ export default function AdminOrders() {
                     <td className="py-3.5 px-4">
                       <p className="font-mono font-bold text-sky-400">{ord.order_number}</p>
                       <p className="text-[10px] text-slate-500">
-                        {new Date(ord.created_at).toLocaleDateString('en-IN', {
+                        {new Date(ord.created_at).toLocaleDateString('en-PK', {
                           day: 'numeric',
                           month: 'short',
                           year: 'numeric'
@@ -195,14 +202,11 @@ export default function AdminOrders() {
                       </p>
                       <p className="text-[11px] text-slate-400">Attn: {ord.customer_name}</p>
                       <p className="text-[10px] text-slate-500">{ord.city}, {ord.state}</p>
-                      {ord.gstin && (
-                        <p className="text-[9px] font-mono text-emerald-400">GST: {ord.gstin}</p>
-                      )}
                     </td>
 
                     <td className="py-3.5 px-4 max-w-xs">
                       <p className="font-semibold text-slate-200 truncate">
-                        {ord.items && ord.items.length > 0 ? ord.items[0].product_name : 'Equipment order'}
+                        {ord.items && ord.items.length > 0 ? ord.items[0].product_name : 'Medical supplies'}
                       </p>
                       {ord.items && ord.items.length > 1 && (
                         <span className="text-[10px] text-sky-400 font-medium">
@@ -213,22 +217,44 @@ export default function AdminOrders() {
 
                     <td className="py-3.5 px-4 font-mono font-bold text-white">
                       {formatPrice(ord.total_amount)}
-                      <p className="text-[10px] font-normal text-slate-500">
-                        GST: {formatPrice(ord.tax_amount)}
-                      </p>
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                          ord.payment_status.toLowerCase().includes('paid')
-                            ? 'bg-emerald-950 text-emerald-400 border-emerald-800/40'
-                            : 'bg-amber-950 text-amber-400 border-amber-800/40'
-                        }`}
-                      >
-                        {ord.payment_status}
-                      </span>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{ord.payment_method}</p>
+                      <div className="space-y-1">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
+                            ord.payment_status.toLowerCase().includes('paid')
+                              ? 'bg-emerald-950 text-emerald-400 border-emerald-800/40'
+                              : 'bg-amber-950 text-amber-400 border-amber-800/40'
+                          }`}
+                        >
+                          {ord.payment_status}
+                        </span>
+                        <p className="text-[10px] text-slate-400 font-medium">{ord.payment_method}</p>
+
+                        {/* Screenshot Thumbnail */}
+                        {ord.payment_proof_image && (
+                          <div
+                            onClick={() => setPreviewProofImage(ord.payment_proof_image)}
+                            className="flex items-center gap-1.5 p-1 rounded-lg bg-emerald-950/60 border border-emerald-800/50 cursor-pointer hover:bg-emerald-900/60 transition-colors"
+                            title="Click to view full payment screenshot"
+                          >
+                            <img
+                              src={ord.payment_proof_image}
+                              alt="SS"
+                              className="w-5 h-5 rounded object-cover border"
+                            />
+                            <span className="text-[9.5px] text-emerald-300 font-mono font-bold">
+                              [View Receipt SS]
+                            </span>
+                          </div>
+                        )}
+                        {ord.transaction_ref && (
+                          <p className="text-[9.5px] text-slate-400 font-mono truncate">
+                            Ref: {ord.transaction_ref}
+                          </p>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -283,6 +309,37 @@ export default function AdminOrders() {
         </div>
       </div>
 
+      {/* Screenshot Preview Modal */}
+      {previewProofImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 rounded-3xl max-w-xl w-full p-4 border border-slate-800 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span className="text-xs font-bold text-emerald-400">Buyer Payment Receipt Screenshot</span>
+              <button
+                onClick={() => setPreviewProofImage(null)}
+                className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto rounded-2xl border border-slate-800 bg-black flex items-center justify-center">
+              <img src={previewProofImage} alt="Payment Receipt" className="max-w-full max-h-full object-contain" />
+            </div>
+            <div className="flex justify-end">
+              <a
+                href={previewProofImage}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow"
+              >
+                <span>Open Full Original File</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status Update Modal */}
       {editingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
@@ -308,9 +365,8 @@ export default function AdminOrders() {
                   onChange={(e) => setStatusFormData({ ...statusFormData, order_status: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                 >
-                  <option value="Pending Confirmation">Pending Confirmation</option>
                   <option value="Processing">Processing & Quality Calibration Check</option>
-                  <option value="Dispatched">Dispatched (Picked by Specialized Courier)</option>
+                  <option value="Dispatched">Dispatched (Picked by TCS Cargo)</option>
                   <option value="Out for Hospital Delivery">Out for Hospital Delivery</option>
                   <option value="Delivered">Delivered & Verification Complete</option>
                   <option value="Cancelled">Cancelled</option>
@@ -325,19 +381,20 @@ export default function AdminOrders() {
                   className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                 >
                   <option value="Paid">Paid / Verified</option>
-                  <option value="Pending (Pay on Delivery)">Pending (Pay on Delivery)</option>
-                  <option value="Failed">Payment Failed</option>
+                  <option value="Pending Verification (SS Uploaded)">Pending Verification (SS Uploaded)</option>
+                  <option value="Pay on Delivery (COD)">Pay on Delivery (COD)</option>
+                  <option value="Failed">Failed</option>
                   <option value="Refunded">Refunded</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Carrier / Logistics Partner</label>
+                <label className="block text-slate-300 font-bold mb-1">Logistics / Courier Partner</label>
                 <input
                   type="text"
                   value={statusFormData.tracking_courier}
                   onChange={(e) => setStatusFormData({ ...statusFormData, tracking_courier: e.target.value })}
-                  placeholder="BlueDart Health Express / Gati KWE"
+                  placeholder="TCS Express Cargo / Leopard Medical"
                   className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                 />
               </div>
@@ -348,19 +405,19 @@ export default function AdminOrders() {
                   type="text"
                   value={statusFormData.tracking_number}
                   onChange={(e) => setStatusFormData({ ...statusFormData, tracking_number: e.target.value })}
-                  placeholder="e.g. BD-MED-99482102"
+                  placeholder="e.g. TCS-MED-99482102"
                   className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Admin Internal Remarks</label>
-                <textarea
-                  rows="2"
-                  value={statusFormData.notes}
-                  onChange={(e) => setStatusFormData({ ...statusFormData, notes: e.target.value })}
-                  placeholder="e.g. Biomedical engineer demo requested on Monday..."
-                  className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
+                <label className="block text-slate-300 font-bold mb-1">Transaction Ref / Notes</label>
+                <input
+                  type="text"
+                  value={statusFormData.transaction_ref}
+                  onChange={(e) => setStatusFormData({ ...statusFormData, transaction_ref: e.target.value })}
+                  placeholder="TID / Bank Trx ID"
+                  className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
@@ -391,4 +448,3 @@ export default function AdminOrders() {
     </div>
   );
 }
-

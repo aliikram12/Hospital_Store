@@ -11,7 +11,8 @@ import {
   PackageX
 } from 'lucide-react';
 import ProductCard from '../components/ProductCard';
-import { getCategoryIcon, formatPrice } from '../utils/helpers';
+import { getCategoryIcon } from '../utils/helpers';
+import { useCurrency } from '../context/CurrencyContext';
 
 export default function CatalogPage({
   categories = [],
@@ -19,6 +20,7 @@ export default function CatalogPage({
   initialSearch = '',
   onNavigate
 }) {
+  const { formatPrice, currency } = useCurrency();
   const [selectedCategory, setSelectedCategory] = useState(initialCategory || '');
   const [selectedBrand, setSelectedBrand] = useState('');
   const [minPrice, setMinPrice] = useState('');
@@ -26,20 +28,18 @@ export default function CatalogPage({
   const [inStockOnly, setInStockOnly] = useState(false);
   const [sortBy, setSortBy] = useState('featured');
   const [searchKeyword, setSearchKeyword] = useState(initialSearch || '');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+  const [viewMode, setViewMode] = useState('grid');
 
   const [products, setProducts] = useState([]);
   const [brands, setBrands] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Sync initialCategory or initialSearch if passed
   useEffect(() => {
     if (initialCategory) setSelectedCategory(initialCategory);
     if (initialSearch) setSearchKeyword(initialSearch);
   }, [initialCategory, initialSearch]);
 
-  // Load brands once
   useEffect(() => {
     fetch('/api/products/brands')
       .then((r) => r.json())
@@ -47,7 +47,6 @@ export default function CatalogPage({
       .catch((e) => console.error(e));
   }, []);
 
-  // Fetch products with active filters
   useEffect(() => {
     setIsLoading(true);
     const params = new URLSearchParams();
@@ -82,13 +81,13 @@ export default function CatalogPage({
   const activeCategoryObj = categories.find((c) => c.slug === selectedCategory);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 animate-fade-in">
       {/* Category Banner if filtered */}
       {activeCategoryObj && (
         <div className="bg-gradient-to-r from-sky-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden shadow-lg border border-sky-800/40">
           <div className="relative z-10 max-w-xl">
             <span className="text-[10px] uppercase font-bold text-sky-400 tracking-wider">
-              Hospital Department Catalog
+              Department Specialty Catalog
             </span>
             <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">
               {activeCategoryObj.name}
@@ -103,7 +102,7 @@ export default function CatalogPage({
       {/* Main Layout: Sidebar Filters + Products */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
         {/* Filters Sidebar */}
-        <aside className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-sm space-y-6 lg:sticky lg:top-24">
+        <aside className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-sm space-y-6 lg:sticky lg:top-24">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="w-4 h-4 text-sky-600" />
@@ -191,22 +190,22 @@ export default function CatalogPage({
           {/* Price Range */}
           <div className="space-y-2 pt-3 border-t border-slate-100">
             <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-              Price Range (₹)
+              Price Range ({currency === 'PKR' ? 'Rs' : '$'})
             </label>
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="number"
-                placeholder="Min ₹"
+                placeholder="Min"
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-sky-500"
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-sky-500"
               />
               <input
                 type="number"
-                placeholder="Max ₹"
+                placeholder="Max"
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-sky-500"
+                className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 outline-none focus:border-sky-500"
               />
             </div>
           </div>
@@ -229,22 +228,21 @@ export default function CatalogPage({
         {/* Products Column */}
         <main className="lg:col-span-3 space-y-4">
           {/* Top Control Bar */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
             <div>
               <p className="text-xs text-slate-500">
                 Showing <span className="font-bold text-slate-900">{products.length}</span> of{' '}
-                <span className="font-bold text-slate-900">{totalCount}</span> certified medical devices
+                <span className="font-bold text-slate-900">{totalCount}</span> medical devices
               </p>
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-              {/* Sort By Dropdown */}
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500 font-medium">Sort:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-sky-500"
+                  className="bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-semibold outline-none focus:border-sky-500"
                 >
                   <option value="featured">Featured / Best Match</option>
                   <option value="price_asc">Price: Low to High</option>
@@ -254,8 +252,7 @@ export default function CatalogPage({
                 </select>
               </div>
 
-              {/* View Mode Toggle */}
-              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+              <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-1.5 ${viewMode === 'grid' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}
@@ -278,8 +275,8 @@ export default function CatalogPage({
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-80 bg-white rounded-2xl border border-slate-200 p-4 animate-pulse space-y-4">
-                  <div className="h-44 bg-slate-200 rounded-xl" />
+                <div key={i} className="h-80 bg-white rounded-3xl border border-slate-200 p-4 animate-pulse space-y-4">
+                  <div className="h-44 bg-slate-200 rounded-2xl" />
                   <div className="h-4 bg-slate-200 rounded w-2/3" />
                   <div className="h-4 bg-slate-200 rounded w-1/2" />
                 </div>
@@ -302,7 +299,7 @@ export default function CatalogPage({
               ))}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
+            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center space-y-3">
               <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
                 <PackageX className="w-8 h-8" />
               </div>
@@ -323,4 +320,3 @@ export default function CatalogPage({
     </div>
   );
 }
-

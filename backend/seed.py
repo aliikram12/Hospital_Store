@@ -1,15 +1,60 @@
 import json
 import datetime
 from database import engine, SessionLocal, Base
-from models import Category, Product, Order, OrderItem, QuoteRequest, CustomerInquiry, Setting
+from models import Category, Product, Order, OrderItem, QuoteRequest, CustomerInquiry, Setting, User
 
 def seed_database():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
+    # Check if users already exist
+    if not db.query(User).first():
+        sample_users = [
+            {
+                "full_name": "Dr. Rajesh Sharma, MD",
+                "email": "dr.sharma@apollohealth.org",
+                "phone": "+92 300 9821044",
+                "hospital_name": "Shaukat Khanum Memorial Hospital",
+                "role": "Medical Superintendent",
+                "status": "Active",
+                "total_orders": 3
+            },
+            {
+                "full_name": "Kavita Singhania",
+                "email": "kavita.singhania@fortiscare.in",
+                "phone": "+92 321 4410928",
+                "hospital_name": "Aga Khan University Hospital (AKUH)",
+                "role": "Procurement Director",
+                "status": "Active",
+                "total_orders": 5
+            },
+            {
+                "full_name": "Dr. Tariq Mehmood",
+                "email": "dr.tariq@chughtailab.com",
+                "phone": "+92 333 8812903",
+                "hospital_name": "Chughtai Healthcare Center",
+                "role": "Chief Radiologist",
+                "status": "Active",
+                "total_orders": 2
+            },
+            {
+                "full_name": "Engr. Bilal Qureshi",
+                "email": "bilal.q@biomedicalpak.com",
+                "phone": "+92 345 5566778",
+                "hospital_name": "National Hospital & Medical Centre",
+                "role": "Bio-Medical Engineer",
+                "status": "Active",
+                "total_orders": 1
+            }
+        ]
+        for u in sample_users:
+            db.add(User(**u))
+        db.commit()
+        print("Users seeded!")
+
     # Check if products already exist
     if db.query(Category).first():
-        print("Database already seeded.")
+        print("Database already seeded with products.")
         db.close()
         return
 
@@ -1001,6 +1046,50 @@ def seed_database():
 
     for s in settings_data:
         db.add(Setting(**s))
+
+    # 7. Sample Registered Users / Procurement Officers
+    sample_users = [
+        {
+            "full_name": "Dr. Rajesh Sharma, MD",
+            "email": "dr.sharma@apollohealth.org",
+            "phone": "+92 300 9821044",
+            "hospital_name": "Shaukat Khanum Memorial Hospital",
+            "role": "Medical Superintendent",
+            "status": "Active",
+            "total_orders": 3
+        },
+        {
+            "full_name": "Kavita Singhania",
+            "email": "kavita.singhania@fortiscare.in",
+            "phone": "+92 321 4410928",
+            "hospital_name": "Aga Khan University Hospital (AKUH)",
+            "role": "Procurement Director",
+            "status": "Active",
+            "total_orders": 5
+        },
+        {
+            "full_name": "Dr. Tariq Mehmood",
+            "email": "dr.tariq@chughtailab.com",
+            "phone": "+92 333 8812903",
+            "hospital_name": "Chughtai Healthcare Center",
+            "role": "Chief Radiologist",
+            "status": "Active",
+            "total_orders": 2
+        },
+        {
+            "full_name": "Engr. Bilal Qureshi",
+            "email": "bilal.q@biomedicalpak.com",
+            "phone": "+92 345 5566778",
+            "hospital_name": "National Hospital & Medical Centre",
+            "role": "Bio-Medical Engineer",
+            "status": "Active",
+            "total_orders": 1
+        }
+    ]
+
+    for u in sample_users:
+        if not db.query(User).filter(User.email == u["email"]).first():
+            db.add(User(**u))
 
     db.commit()
     db.close()

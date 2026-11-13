@@ -125,9 +125,13 @@ class OrderCreate(BaseModel):
     city: str
     state: str
     postal_code: str
-    country: Optional[str] = "India"
+    country: Optional[str] = "Pakistan"
     gstin: Optional[str] = ""
-    payment_method: Optional[str] = "Credit/Debit Card"
+    currency: Optional[str] = "PKR"
+    exchange_rate: Optional[float] = 280.0
+    payment_method: str # "Cash on Delivery" or "QR Code / Bank Transfer"
+    payment_proof_image: Optional[str] = ""
+    transaction_ref: Optional[str] = ""
     notes: Optional[str] = ""
     items: List[OrderItemCreate]
     discount_amount: Optional[float] = 0.0
@@ -137,6 +141,8 @@ class OrderStatusUpdate(BaseModel):
     payment_status: Optional[str] = None
     tracking_courier: Optional[str] = None
     tracking_number: Optional[str] = None
+    payment_proof_image: Optional[str] = None
+    transaction_ref: Optional[str] = None
     notes: Optional[str] = None
 
 class OrderResponse(BaseModel):
@@ -152,6 +158,8 @@ class OrderResponse(BaseModel):
     postal_code: str
     country: str
     gstin: Optional[str] = ""
+    currency: Optional[str] = "PKR"
+    exchange_rate: Optional[float] = 280.0
     subtotal: float
     tax_amount: float
     shipping_fee: float
@@ -160,12 +168,43 @@ class OrderResponse(BaseModel):
     order_status: str
     payment_status: str
     payment_method: str
+    payment_proof_image: Optional[str] = ""
+    transaction_ref: Optional[str] = ""
     tracking_courier: Optional[str] = ""
     tracking_number: Optional[str] = ""
     notes: Optional[str] = ""
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# User Schemas
+class UserBase(BaseModel):
+    full_name: str
+    email: str
+    phone: Optional[str] = ""
+    hospital_name: Optional[str] = ""
+    role: Optional[str] = "Hospital Admin"
+    status: Optional[str] = "Active"
+
+class UserCreate(UserBase):
+    pass
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    hospital_name: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+
+class UserResponse(UserBase):
+    id: int
+    total_orders: int
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -225,4 +264,3 @@ class DashboardStats(BaseModel):
     recent_orders: List[OrderResponse]
     sales_by_status: Dict[str, int]
     top_categories: List[Dict[str, Any]]
-

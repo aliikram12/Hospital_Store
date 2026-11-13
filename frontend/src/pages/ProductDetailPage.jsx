@@ -15,16 +15,17 @@ import {
   Share2,
   FileText
 } from 'lucide-react';
-import { formatPrice } from '../utils/helpers';
+import { useCurrency } from '../context/CurrencyContext';
 import { useCart } from '../context/CartContext';
 import ProductCard from '../components/ProductCard';
 
 export default function ProductDetailPage({ productId, slug, onNavigate }) {
   const { addToCart, openQuoteModal } = useCart();
+  const { formatPrice, currency } = useCurrency();
   const [product, setProduct] = useState(null);
   const [activeImage, setActiveImage] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [activeTab, setActiveTab] = useState('specs'); // 'specs' | 'features' | 'description' | 'warranty'
+  const [activeTab, setActiveTab] = useState('specs');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -77,7 +78,7 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-12">
+    <div className="max-w-7xl mx-auto px-4 py-8 space-y-12 animate-fade-in">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-slate-500">
         <button onClick={() => onNavigate('home')} className="hover:text-sky-600">Home</button>
@@ -132,7 +133,7 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
               <span className="text-xs font-extrabold text-sky-700 uppercase tracking-wider px-2 py-0.5 rounded bg-sky-50 border border-sky-200">
                 {product.brand}
               </span>
-              <span className="text-xs text-slate-400">SKU: {product.sku}</span>
+              <span className="text-xs font-mono text-slate-400">{product.sku}</span>
             </div>
 
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-snug">
@@ -157,6 +158,11 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
               <span className="text-3xl font-black text-slate-900">
                 {formatPrice(product.price)}
               </span>
+              {currency === 'PKR' && (
+                <span className="text-sm font-mono text-slate-400">
+                  (${Math.round(product.price / 280)})
+                </span>
+              )}
               {product.original_price > product.price && (
                 <span className="text-base text-slate-400 line-through">
                   {formatPrice(product.original_price)}
@@ -185,7 +191,7 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
             </div>
             <div className="flex items-center gap-2 font-medium">
               <Truck className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>Insured Biomedical Express Logistics across all States & UTs</span>
+              <span>Insured Biomedical Express Logistics across all Cities</span>
             </div>
           </div>
 
@@ -242,7 +248,7 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
         </div>
       </div>
 
-      {/* Tabs Section: Specifications, Features, Overview, Warranty */}
+      {/* Tabs Section */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex border-b border-slate-200 bg-slate-50/70 overflow-x-auto no-scrollbar">
           <button
@@ -346,23 +352,7 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
                 <div>
                   <h4 className="font-bold text-slate-900">HospitalStore Biomedical Assurance</h4>
                   <p className="mt-1">
-                    Every device dispatched undergoes rigorous pre-delivery inspection (PDI) and electrical safety testing by our certified biomedical engineers. Comes with official OEM warranty card and calibration report.
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                  <h4 className="font-bold text-slate-900 mb-1">AMC / CMC Coverage</h4>
-                  <p className="text-slate-500">
-                    Annual Maintenance Contracts (Comprehensive & Non-Comprehensive) available after warranty period with guaranteed spare parts availability.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                  <h4 className="font-bold text-slate-900 mb-1">Installation & Training</h4>
-                  <p className="text-slate-500">
-                    On-site installation and clinical training for doctors and nursing staff available across major medical hubs across India.
+                    Every device dispatched undergoes rigorous pre-delivery inspection (PDI) and electrical safety testing by our certified biomedical engineers.
                   </p>
                 </div>
               </div>
@@ -389,4 +379,3 @@ export default function ProductDetailPage({ productId, slug, onNavigate }) {
     </div>
   );
 }
-

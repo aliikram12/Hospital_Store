@@ -11,13 +11,17 @@ import {
   Eye,
   SlidersHorizontal,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Upload,
+  Image as ImageIcon,
+  Link
 } from 'lucide-react';
-import { formatPrice } from '../../utils/helpers';
+import { useCurrency } from '../../context/CurrencyContext';
 import { useToast } from '../../context/ToastContext';
 
 export default function AdminProducts({ categories = [] }) {
   const { addToast } = useToast();
+  const { formatPrice, currency } = useCurrency();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -26,6 +30,9 @@ export default function AdminProducts({ categories = [] }) {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [imageUploadTab, setImageUploadTab] = useState('upload'); // 'upload' | 'url'
+  const [isUploading, setIsUploading] = useState(false);
+
   const [formData, setFormData] = useState({
     name: '',
     slug: '',
@@ -71,8 +78,34 @@ export default function AdminProducts({ categories = [] }) {
     fetchProducts();
   }, [search, selectedCategory]);
 
+  const handleDeviceFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const body = new FormData();
+    body.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body
+      });
+      if (!res.ok) throw new Error('Failed to upload image file');
+      const data = await res.json();
+      setFormData((prev) => ({ ...prev, image_url: data.url }));
+      addToast('Product image uploaded successfully!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('File upload failed. Please try again.', 'error');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleOpenAddModal = () => {
     setEditingProduct(null);
+    setImageUploadTab('upload');
     setFormData({
       name: '',
       slug: '',
@@ -99,8 +132,8 @@ export default function AdminProducts({ categories = [] }) {
 
   const handleOpenEditModal = (p) => {
     setEditingProduct(p);
-    
-    // convert specs dict to text
+    setImageUploadTab('url');
+
     let specsStr = '';
     if (p.specifications && typeof p.specifications === 'object') {
       specsStr = Object.entries(p.specifications)
@@ -108,7 +141,6 @@ export default function AdminProducts({ categories = [] }) {
         .join('\n');
     }
 
-    // convert features list to text
     let featsStr = '';
     if (Array.isArray(p.features)) {
       featsStr = p.features.join('\n');
@@ -141,7 +173,6 @@ export default function AdminProducts({ categories = [] }) {
   const handleSaveProduct = async (e) => {
     e.preventDefault();
 
-    // Parse specs string into dict
     const specsDict = {};
     if (formData.specifications_text) {
       formData.specifications_text.split('\n').forEach((line) => {
@@ -152,7 +183,6 @@ export default function AdminProducts({ categories = [] }) {
       });
     }
 
-    // Parse features text into array
     const featuresArr = formData.features_text
       ? formData.features_text.split('\n').map((l) => l.trim()).filter(Boolean)
       : [];
@@ -207,7 +237,7 @@ export default function AdminProducts({ categories = [] }) {
   };
 
   const handleDeleteProduct = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
 
     try {
       const res = await fetch(`/api/products/${id}`, { method: 'DELETE' });
@@ -238,20 +268,20 @@ export default function AdminProducts({ categories = [] }) {
       setProducts((prev) =>
         prev.map((item) => (item.id === p.id ? { ...item, is_featured: !item.is_featured } : item))
       );
-      addToast(`Updated featured flag for ${p.name.slice(0, 20)}...`, 'info');
+      addToast(`Updated featured status for ${p.name.slice(0, 20)}...`, 'info');
     } catch (err) {
       console.error(err);
     }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-white">Hospital Medical Equipment Inventory</h1>
           <p className="text-xs text-slate-400">
-            Create, update pricing, technical specs, and stock quantities
+            Upload equipment photos from device or URL, set technical specs & stock
           </p>
         </div>
 
@@ -298,7 +328,7 @@ export default function AdminProducts({ categories = [] }) {
                 <th className="py-3 px-4">Equipment</th>
                 <th className="py-3 px-4">Brand / Model</th>
                 <th className="py-3 px-4">Department</th>
-                <th className="py-3 px-4">Price (₹)</th>
+                <th className="py-3 px-4">Price</th>
                 <th className="py-3 px-4">Stock</th>
                 <th className="py-3 px-4 text-center">Featured</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -403,7 +433,7 @@ export default function AdminProducts({ categories = [] }) {
         </div>
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* Add / Edit Modal with Device Upload & URL Switch */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
           <div className="bg-slate-900 rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-2xl border border-slate-800 flex flex-col">
@@ -430,6 +460,77 @@ export default function AdminProducts({ categories = [] }) {
                   placeholder="e.g. Mindray uMEC 12 Multi-Parameter Patient Monitor"
                   className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                 />
+              </div>
+
+              {/* Photo Upload: Device File vs URL (Both Supported) */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="block text-slate-300 font-bold">
+                    📸 Product Image (Upload from Device or enter URL) *
+                  </label>
+                  <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setImageUploadTab('upload')}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold ${
+                        imageUploadTab === 'upload' ? 'bg-sky-600 text-white shadow' : 'text-slate-400'
+                      }`}
+                    >
+                      Device Upload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUploadTab('url')}
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold ${
+                        imageUploadTab === 'url' ? 'bg-sky-600 text-white shadow' : 'text-slate-400'
+                      }`}
+                    >
+                      Image URL
+                    </button>
+                  </div>
+                </div>
+
+                {imageUploadTab === 'upload' ? (
+                  <div className="flex items-center gap-3">
+                    <label className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-sky-400 font-bold rounded-xl border border-sky-500/30 cursor-pointer flex items-center gap-2 shadow-sm">
+                      <Upload className="w-4 h-4 text-sky-400" />
+                      <span>{isUploading ? 'Uploading file...' : 'Choose File from Device'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleDeviceFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-[11px] text-slate-500 truncate max-w-xs">
+                      {formData.image_url || 'No file selected yet'}
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      value={formData.image_url}
+                      onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                      placeholder="https://images.unsplash.com/photo-..."
+                      className="w-full bg-slate-900 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
+                    />
+                  </div>
+                )}
+
+                {/* Thumbnail Preview */}
+                {formData.image_url && (
+                  <div className="flex items-center gap-3 pt-1">
+                    <img
+                      src={formData.image_url}
+                      alt="Preview"
+                      className="w-16 h-16 rounded-xl object-cover border border-slate-800 bg-white"
+                    />
+                    <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Image ready for catalog
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -471,7 +572,7 @@ export default function AdminProducts({ categories = [] }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">Selling Price (₹) *</label>
+                  <label className="block text-slate-300 font-bold mb-1">Selling Price (Base PKR) *</label>
                   <input
                     type="number"
                     required
@@ -479,10 +580,13 @@ export default function AdminProducts({ categories = [] }) {
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                   />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">
+                    Auto-converts to USD (${Math.round(formData.price / 280)})
+                  </span>
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-bold mb-1">Original MRP (₹)</label>
+                  <label className="block text-slate-300 font-bold mb-1">Original MRP</label>
                   <input
                     type="number"
                     value={formData.original_price}
@@ -500,17 +604,6 @@ export default function AdminProducts({ categories = [] }) {
                     className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Image URL</label>
-                <input
-                  type="text"
-                  value={formData.image_url}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full bg-slate-950 border border-slate-800 text-white px-3 py-2 rounded-xl outline-none focus:border-sky-500"
-                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -617,4 +710,3 @@ export default function AdminProducts({ categories = [] }) {
     </div>
   );
 }
-

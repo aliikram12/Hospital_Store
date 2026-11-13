@@ -13,11 +13,19 @@ import {
   Package
 } from 'lucide-react';
 
-export const formatPrice = (amount) => {
-  if (amount === undefined || amount === null) return '₹0';
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
+export const formatPrice = (amount, currency = 'PKR') => {
+  if (amount === undefined || amount === null || isNaN(amount)) {
+    return currency === 'USD' ? '$0' : 'Rs 0';
+  }
+  if (currency === 'USD') {
+    const usd = Number(amount) / 280;
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 2
+    }).format(usd);
+  }
+  return 'Rs ' + new Intl.NumberFormat('en-PK', {
     maximumFractionDigits: 0
   }).format(amount);
 };
@@ -52,4 +60,3 @@ export const getCategoryIcon = (iconName, className = "w-5 h-5") => {
       return <Package className={className} />;
   }
 };
-

@@ -3,23 +3,24 @@ import {
   ShieldCheck,
   Building2,
   Truck,
-  CreditCard,
   QrCode,
-  Landmark,
   Banknote,
   CheckCircle2,
   Lock,
   ArrowRight,
-  Tag,
+  Upload,
+  Image as ImageIcon,
+  FileCheck,
   AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useCart } from '../context/CartContext';
+import { useCurrency } from '../context/CurrencyContext';
 import { useToast } from '../context/ToastContext';
-import { formatPrice } from '../utils/helpers';
 
 export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
   const { cartItems, subtotal, taxAmount, shippingFee, totalAmount, clearCart } = useCart();
+  const { formatPrice, currency, exchangeRate } = useCurrency();
   const { addToast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -29,22 +30,23 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
     hospital_clinic_name: '',
     shipping_address: '',
     city: '',
-    state: 'Delhi',
+    state: 'Punjab',
     postal_code: '',
     gstin: '',
     notes: '',
-    payment_method: 'UPI / Instant QR'
+    payment_method: 'Cash on Delivery', // ONLY 2 METHODS: 'Cash on Delivery' or 'QR Code / Bank Transfer'
+    payment_proof_image: '',
+    transaction_ref: ''
   });
 
   const [couponCode, setCouponCode] = useState('');
   const [discountAmount, setDiscountAmount] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingSS, setIsUploadingSS] = useState(false);
 
-  const statesList = [
-    'Delhi NCR', 'Maharashtra', 'Karnataka', 'Tamil Nadu', 'Gujarat',
-    'Uttar Pradesh', 'West Bengal', 'Telangana', 'Kerala', 'Rajasthan',
-    'Punjab', 'Madhya Pradesh', 'Haryana', 'Bihar', 'Odisha', 'Assam'
+  const provincesList = [
+    'Punjab', 'Sindh', 'Khyber Pakhtunkhwa (KPK)', 'Balochistan', 'Islamabad Capital Territory', 'Azad Kashmir', 'Gilgit-Baltistan'
   ];
 
   const handleApplyCoupon = (e) => {
@@ -67,10 +69,41 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
   const finalTotal = Math.max(0, totalAmount - discountAmount);
 
+  // Handle Screenshot Upload for QR / Bank Transfer
+  const handleScreenshotUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploadingSS(true);
+    const body = new FormData();
+    body.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body
+      });
+      if (!res.ok) throw new Error('Failed to upload receipt screenshot');
+      const data = await res.json();
+      setFormData((prev) => ({ ...prev, payment_proof_image: data.url }));
+      addToast('Payment receipt screenshot uploaded successfully!', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Screenshot upload failed. Please try again or paste image URL.', 'error');
+    } finally {
+      setIsUploadingSS(false);
+    }
+  };
+
   const handleSubmitOrder = async (e) => {
     e.preventDefault();
     if (cartItems.length === 0) {
       addToast('Your cart is empty', 'error');
+      return;
+    }
+
+    if (formData.payment_method === 'QR Code / Bank Transfer' && !formData.payment_proof_image && !formData.transaction_ref) {
+      addToast('Please upload the transaction screenshot (SS) or enter the Transaction ID to confirm payment.', 'error');
       return;
     }
 
@@ -86,9 +119,13 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
         city: formData.city,
         state: formData.state,
         postal_code: formData.postal_code,
-        country: 'India',
+        country: 'Pakistan',
         gstin: formData.gstin,
+        currency: currency,
+        exchange_rate: exchangeRate,
         payment_method: formData.payment_method,
+        payment_proof_image: formData.payment_proof_image,
+        transaction_ref: formData.transaction_ref,
         notes: formData.notes,
         discount_amount: discountAmount,
         items: cartItems.map((item) => ({
@@ -113,18 +150,15 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
       const orderResult = await res.json();
 
-      // Confetti celebration
       try {
         confetti({
-          particleCount: 100,
-          spread: 70,
+          particleCount: 110,
+          spread: 75,
           origin: { y: 0.6 }
         });
-      } catch (err) {
-        // ignore confetti errors
-      }
+      } catch (err) {}
 
-      addToast(`Order ${orderResult.order_number} confirmed successfully!`, 'success');
+      addToast(`Order ${orderResult.order_number} confirmed!`, 'success');
       clearCart();
       if (onOrderCompleted) {
         onOrderCompleted(orderResult);
@@ -165,7 +199,7 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
             Hospital Equipment Checkout
           </h1>
           <p className="text-xs text-slate-500">
-            Secure 256-Bit SSL Encrypted Medical Order Processing with B2B GST Invoicing
+            Pay via Cash on Delivery or QR Code / Bank Transfer with Screenshot Confirmation
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
@@ -181,18 +215,18 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
           <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 text-sky-700 font-bold text-sm border-b border-slate-100 pb-3">
               <Building2 className="w-4 h-4 text-sky-600" />
-              <span>1. Purchaser & Organization Details</span>
+              <span>1. Purchaser & Hospital Details</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Physician / Officer Full Name *
+                  Physician / Procurement Officer Name *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Dr. Rajesh Sharma"
+                  placeholder="Dr. Tariq / Bilal Qureshi"
                   value={formData.customer_name}
                   onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -201,11 +235,11 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Hospital / Clinic / Center Name
+                  Hospital / Clinic / Medical Center Name
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Apollo Multispeciality Hospital"
+                  placeholder="e.g. Shaukat Khanum / AKUH / City Clinic"
                   value={formData.hospital_clinic_name}
                   onChange={(e) => setFormData({ ...formData, hospital_clinic_name: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -216,12 +250,12 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Email Address (for GST Tax Invoice PDF) *
+                  Email Address (for Official Tax Invoice PDF) *
                 </label>
                 <input
                   type="email"
                   required
-                  placeholder="billing@hospital.org"
+                  placeholder="doctor@hospital.org"
                   value={formData.customer_email}
                   onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -235,7 +269,7 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
                 <input
                   type="tel"
                   required
-                  placeholder="+91 98210 44892"
+                  placeholder="+92 300 1234567"
                   value={formData.customer_phone}
                   onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -245,11 +279,11 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Hospital GSTIN Number (Optional - for 12% Input Tax Credit)
+                Hospital NTN / GSTIN Number (Optional - for Tax Exemption or Input Credit)
               </label>
               <input
                 type="text"
-                placeholder="e.g. 07AAAAA0000A1Z5"
+                placeholder="e.g. NTN-4892102-1"
                 value={formData.gstin}
                 onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
                 className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none uppercase"
@@ -261,17 +295,17 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
           <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 text-sky-700 font-bold text-sm border-b border-slate-100 pb-3">
               <Truck className="w-4 h-4 text-sky-600" />
-              <span>2. Delivery Address & Freight Instructions</span>
+              <span>2. Delivery Address & Logistics Instructions</span>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Street Address / Ward / Block / Suite *
+                Street Address / Ward / OT Block *
               </label>
               <textarea
                 required
                 rows="2"
-                placeholder="Suite 402, Main OT Block, Sector 14"
+                placeholder="Biomedical Department, 2nd Floor, Main Building"
                 value={formData.shipping_address}
                 onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -284,7 +318,7 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
                 <input
                   type="text"
                   required
-                  placeholder="Gurugram / Mumbai"
+                  placeholder="Lahore / Karachi / Islamabad"
                   value={formData.city}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -292,24 +326,23 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">State *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Province *</label>
                 <select
                   value={formData.state}
                   onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none bg-white"
                 >
-                  {statesList.map((st) => (
-                    <option key={st} value={st}>{st}</option>
+                  {provincesList.map((pr) => (
+                    <option key={pr} value={pr}>{pr}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">PIN Code *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Postal Code</label>
                 <input
                   type="text"
-                  required
-                  placeholder="122001"
+                  placeholder="54000"
                   value={formData.postal_code}
                   onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -319,11 +352,11 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Special Delivery Notes / Unloading Details
+                Special Delivery Notes / Unloading Ramp Instructions
               </label>
               <input
                 type="text"
-                placeholder="e.g. Heavy equipment unloading ramp required; deliver to Biomedical Dept."
+                placeholder="e.g. Call before delivery; heavy equipment crate unloading required"
                 value={formData.notes}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 outline-none"
@@ -331,64 +364,121 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
             </div>
           </div>
 
-          {/* Section 3: Payment Method Selection */}
+          {/* Section 3: Payment Method (EXACTLY 2 PAYMENT METHODS) */}
           <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 text-sky-700 font-bold text-sm border-b border-slate-100 pb-3">
-              <CreditCard className="w-4 h-4 text-sky-600" />
-              <span>3. Payment Method</span>
+              <Banknote className="w-4 h-4 text-sky-600" />
+              <span>3. Payment Method (Select 1 of 2 Options)</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { id: 'UPI / Instant QR', label: 'UPI / Instant QR Code', icon: QrCode, desc: 'Google Pay, PhonePe, Paytm, BHIM' },
-                { id: 'Credit/Debit Card (Visa/MC)', label: 'Credit / Debit Card', icon: CreditCard, desc: 'Visa, MasterCard, RuPay (256-Bit SSL)' },
-                { id: 'Hospital PO / RTGS Transfer', label: 'Hospital PO / RTGS Wire', icon: Landmark, desc: 'Official B2B institutional account transfer' },
-                { id: 'Cash on Delivery (COD)', label: 'Pay on Delivery / Inspection', icon: Banknote, desc: 'Inspect device upon arrival before payment' }
-              ].map((method) => {
-                const Icon = method.icon;
-                const isSelected = formData.payment_method === method.id;
-                return (
-                  <div
-                    key={method.id}
-                    onClick={() => setFormData({ ...formData, payment_method: method.id })}
-                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-sky-600 bg-sky-50/70 shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Icon className={`w-5 h-5 ${isSelected ? 'text-sky-600' : 'text-slate-500'}`} />
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-slate-900">{method.label}</h4>
-                        <p className="text-[10px] text-slate-500 truncate">{method.desc}</p>
-                      </div>
-                    </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Option 1: Cash on Delivery */}
+              <div
+                onClick={() => setFormData({ ...formData, payment_method: 'Cash on Delivery' })}
+                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                  formData.payment_method === 'Cash on Delivery'
+                    ? 'border-sky-600 bg-sky-50/70 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                    <Banknote className="w-5 h-5" />
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Payment simulation sub-boxes */}
-            {formData.payment_method === 'UPI / Instant QR' && (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-2">
-                <p className="text-xs font-bold text-slate-800">Scan & Pay via any UPI App</p>
-                <div className="w-32 h-32 bg-white p-2 rounded-xl border border-slate-200 mx-auto shadow-inner flex items-center justify-center">
-                  <div className="text-center space-y-1">
-                    <QrCode className="w-20 h-20 text-slate-800 mx-auto" />
-                    <span className="text-[9px] font-mono font-bold text-slate-500">hospitalstore@icici</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">1. Cash on Delivery (COD)</h4>
+                    <p className="text-[10px] text-slate-500">Pay cash upon device inspection</p>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500">Instant biometric confirmation upon order placement</p>
               </div>
-            )}
 
-            {formData.payment_method === 'Hospital PO / RTGS Transfer' && (
-              <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 space-y-1">
-                <p className="font-bold">Institutional Bank Account Details:</p>
-                <p className="font-mono text-[11px]">Bank: HDFC Bank Ltd • Branch: Okhla Industrial Area</p>
-                <p className="font-mono text-[11px]">Account Name: Hospital Store Pvt. Ltd.</p>
-                <p className="font-mono text-[11px]">Account No: 50200089412039 • IFSC: HDFC0000281</p>
+              {/* Option 2: QR Code & Bank Transfer with SS */}
+              <div
+                onClick={() => setFormData({ ...formData, payment_method: 'QR Code / Bank Transfer' })}
+                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                  formData.payment_method === 'QR Code / Bank Transfer'
+                    ? 'border-sky-600 bg-sky-50/70 shadow-sm'
+                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900">2. QR Code / Bank Transfer</h4>
+                    <p className="text-[10px] text-slate-500">Scan QR / Bank Transfer + SS upload</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-panel for QR Code / Bank Transfer with Screenshot Upload */}
+            {formData.payment_method === 'QR Code / Bank Transfer' && (
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4 animate-in fade-in">
+                <div className="text-center space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Official Verified HospitalStore Bank Account</span>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-2xl border border-slate-200 max-w-sm mx-auto shadow-inner space-y-2 text-xs">
+                    <div className="w-36 h-36 bg-slate-100 p-2 rounded-xl mx-auto flex items-center justify-center border">
+                      <QrCode className="w-28 h-28 text-slate-800" />
+                    </div>
+                    <div className="text-left space-y-1 font-mono text-[11px]">
+                      <p><b className="text-slate-700">Bank:</b> Meezan Bank Ltd</p>
+                      <p><b className="text-slate-700">Account Title:</b> Hospital Store Official</p>
+                      <p><b className="text-slate-700">Account No:</b> 0201-0105492819</p>
+                      <p><b className="text-slate-700">EasyPaisa / JazzCash:</b> 0300-1234567</p>
+                      <p><b className="text-slate-700">Amount Due:</b> <span className="font-bold text-sky-700">{formatPrice(finalTotal, true)}</span></p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Screenshot (SS) Upload Form */}
+                <div className="pt-2 border-t border-slate-200 space-y-3">
+                  <label className="block text-xs font-bold text-slate-900">
+                    📸 Upload Payment Screenshot (SS) or Transaction Receipt *
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <label className="w-full sm:w-auto px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-2 shadow transition-all">
+                      <Upload className="w-4 h-4" />
+                      <span>{isUploadingSS ? 'Uploading Screenshot...' : 'Upload SS from Device'}</span>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        onChange={handleScreenshotUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <div className="flex-1 w-full">
+                      <input
+                        type="text"
+                        placeholder="Or enter Transaction ID / Trx Reference (TID)"
+                        value={formData.transaction_ref}
+                        onChange={(e) => setFormData({ ...formData, transaction_ref: e.target.value })}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-sky-500 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {formData.payment_proof_image && (
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center gap-3 text-xs text-emerald-800">
+                      <img
+                        src={formData.payment_proof_image}
+                        alt="Payment Proof"
+                        className="w-12 h-12 rounded-lg object-cover border"
+                      />
+                      <div>
+                        <p className="font-bold">Screenshot Attached & Ready!</p>
+                        <p className="text-[11px] text-emerald-600 font-mono truncate">{formData.payment_proof_image}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -476,7 +566,14 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
 
               <div className="pt-3 border-t border-slate-200 flex justify-between text-base font-black text-slate-900">
                 <span>Total Payable</span>
-                <span className="text-sky-700">{formatPrice(finalTotal)}</span>
+                <div className="text-right">
+                  <span className="text-sky-700 block">{formatPrice(finalTotal)}</span>
+                  {currency === 'PKR' && (
+                    <span className="text-[11px] text-slate-400 font-mono font-normal">
+                      (${Math.round(finalTotal / 280)})
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -500,4 +597,3 @@ export default function CheckoutPage({ onNavigate, onOrderCompleted }) {
     </div>
   );
 }
-

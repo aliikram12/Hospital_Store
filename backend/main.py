@@ -1,9 +1,14 @@
 import datetime
 import random
 import json
+import os
+import shutil
+import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, desc, asc
 
@@ -17,11 +22,10 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="HospitalStore Healthcare & Medical Equipment API",
     description="High-performance backend API for HospitalStore e-commerce, quotations, B2B hospital billing, and admin management.",
-    version="2.0.0"
+    version="2.1.0"
 )
 
-
-
+# Enable CORS for local dev and frontend access
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,6 +33,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Uploads directory
+UPLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+
+
+# ==========================================
+# FILE UPLOAD API (Device Upload Support)
+# ==========================================
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """Upload product image, category icon, or payment proof screenshot."""
+    try:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if not ext:
+            ext = ".jpg"
+        allowed_exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg", ".pdf"]
+        if ext not in allowed_exts:
+            raise HTTPException(status_code=400, detail=f"Unsupported file extension {ext}. Allowed: {allowed_exts}")
+
+        filename = f"{uuid.uuid4().hex[:12]}_{int(datetime.datetime.utcnow().timestamp())}{ext}"
+        destination = os.path.join(UPLOADS_DIR, filename)
+
+        with open(destination, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        return {
+            "success": True,
+            "filename": filename,
+            "url": f"/uploads/{filename}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image upload failed: {str(e)}")
 
 
 # ==========================================
@@ -47,6 +86,15 @@ def health_check():
 def get_settings(db: Session = Depends(get_db)):
     settings_rows = db.query(models.Setting).all()
     settings_dict = {s.key: s.value for s in settings_rows}
+    # Provide defaults if not found
+    if "currency_rate_usd" not in settings_dict:
+        settings_dict["currency_rate_usd"] = "280"
+    if "bank_account_title" not in settings_dict:
+        settings_dict["bank_account_title"] = "Hospital Store Official"
+    if "bank_account_no" not in settings_dict:
+        settings_dict["bank_account_no"] = "0201-0105492819 (Meezan Bank)"
+    if "easypaisa_jazzcash" not in settings_dict:
+        settings_dict["easypaisa_jazzcash"] = "0300-1234567 (Hospital Store)"
     return settings_dict
 
 @app.put("/api/settings")
@@ -71,6 +119,9 @@ def get_categories(db: Session = Depends(get_db)):
     res = []
     for c in categories:
         prod_count = db.query(models.Product).filter(models.Product.category_id == c.id).count()
+        # Fetch up to 6 product titles to serve as mega-menu subcategories/highlights
+        sample_prods = db.query(models.Product.name).filter(models.Product.category_id == c.id).limit(8).all()
+        subitems = [p[0] for p in sample_prods]
         res.append({
             "id": c.id,
             "name": c.name,
@@ -80,7 +131,8 @@ def get_categories(db: Session = Depends(get_db)):
             "banner_image": c.banner_image,
             "is_featured": c.is_featured,
             "display_order": c.display_order,
-            "product_count": prod_count
+            "product_count": prod_count,
+            "subitems": subitems
         })
     return res
 
@@ -287,14 +339,12 @@ def get_product(slug_or_id: str, db: Session = Depends(get_db)):
 
 @app.post("/api/products", status_code=status.HTTP_201_CREATED)
 def create_product(product_data: schemas.ProductCreate, db: Session = Depends(get_db)):
-    # Auto generate SKU if empty
     prod_dict = product_data.dict()
     if not prod_dict.get("sku"):
         prod_dict["sku"] = f"HS-{random.randint(1000, 9999)}"
     if not prod_dict.get("slug"):
         prod_dict["slug"] = prod_dict["name"].lower().replace(" ", "-").replace("/", "-")[:250]
 
-    # Calculate discount percent
     orig_p = prod_dict.get("original_price") or prod_dict["price"]
     price = prod_dict["price"]
     if orig_p > price:
@@ -332,7 +382,6 @@ def update_product(id: int, product_data: schemas.ProductUpdate, db: Session = D
     for k, v in update_dict.items():
         setattr(prod, k, v)
 
-    # Recalculate discount if prices modified
     if prod.original_price and prod.price and prod.original_price > prod.price:
         prod.discount_percent = int(((prod.original_price - prod.price) / prod.original_price) * 100)
 
@@ -370,7 +419,7 @@ def toggle_product_featured(id: int, db: Session = Depends(get_db)):
 
 
 # ==========================================
-# ORDERS & BILLING API
+# ORDERS & BILLING API (2 PAYMENT MODES ONLY: COD & QR)
 # ==========================================
 
 @app.post("/api/orders", status_code=status.HTTP_201_CREATED)
@@ -378,29 +427,35 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
     if not order_data.items:
         raise HTTPException(status_code=400, detail="Order must contain at least one item")
 
-    # Calculate subtotal from items
+    # Validate payment method: ONLY Cash on Delivery OR QR Code / Bank Transfer
+    pm = order_data.payment_method
+    if "QR" not in pm and "Cash" not in pm and "COD" not in pm:
+        pm = "Cash on Delivery"
+
+    # Calculate subtotal from items (all calculations done in base PKR)
     subtotal = sum(item.unit_price * item.quantity for item in order_data.items)
     
-    # 12% GST on medical equipment
-    tax_rate = 0.12
+    tax_rate = 0.12 # 12% standard medical GST
     tax_amount = round(subtotal * tax_rate, 2)
     
-    # Free shipping on >= 5000
+    # Free shipping on >= 5000 PKR
     shipping_fee = 0.0 if subtotal >= 5000 else 250.0
     discount_amount = order_data.discount_amount or 0.0
     total_amount = round(subtotal + tax_amount + shipping_fee - discount_amount, 2)
 
-    # Generate unique Hospital Store order number
     rand_suffix = random.randint(1000, 9999)
     order_num = f"HS-2026-{rand_suffix}"
 
-    # Auto assign tracking courier based on payment method
-    courier = "BlueDart Health Express" if order_data.payment_method != "Hospital PO / RTGS Transfer" else "Gati KWE Heavy Logistics"
-    tracking_no = f"BD-HS-{random.randint(10000000, 99999999)}"
+    courier = "TCS Express Medical Cargo"
+    tracking_no = f"TCS-MED-{random.randint(10000000, 99999999)}"
 
-    # Determine initial status
-    payment_status = "Paid" if "COD" not in order_data.payment_method else "Pending (Pay on Delivery)"
-    order_status = "Processing" if payment_status == "Paid" else "Pending Confirmation"
+    # Payment Status
+    if "QR" in pm:
+        payment_status = "Pending Verification (SS Uploaded)" if order_data.payment_proof_image else "Awaiting Bank Transfer"
+    else:
+        payment_status = "Pay on Delivery (COD)"
+
+    order_status = "Processing"
 
     new_order = models.Order(
         order_number=order_num,
@@ -412,8 +467,10 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
         city=order_data.city,
         state=order_data.state,
         postal_code=order_data.postal_code,
-        country=order_data.country or "India",
+        country=order_data.country or "Pakistan",
         gstin=order_data.gstin or "",
+        currency=order_data.currency or "PKR",
+        exchange_rate=order_data.exchange_rate or 280.0,
         subtotal=subtotal,
         tax_amount=tax_amount,
         shipping_fee=shipping_fee,
@@ -421,7 +478,9 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
         total_amount=total_amount,
         order_status=order_status,
         payment_status=payment_status,
-        payment_method=order_data.payment_method,
+        payment_method=pm,
+        payment_proof_image=order_data.payment_proof_image or "",
+        transaction_ref=order_data.transaction_ref or "",
         tracking_courier=courier,
         tracking_number=tracking_no,
         notes=order_data.notes or ""
@@ -430,7 +489,6 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
     db.add(new_order)
     db.flush()
 
-    # Add items
     for item in order_data.items:
         order_item = models.OrderItem(
             order_id=new_order.id,
@@ -443,7 +501,6 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
         )
         db.add(order_item)
 
-        # Update product stock if matched
         if item.product_id:
             db_p = db.query(models.Product).filter(models.Product.id == item.product_id).first()
             if db_p:
@@ -451,15 +508,41 @@ def create_order(order_data: schemas.OrderCreate, db: Session = Depends(get_db))
                 if db_p.stock_quantity == 0:
                     db_p.is_in_stock = False
 
+    # Also record or increment customer order count
+    existing_user = db.query(models.User).filter(models.User.email == order_data.customer_email).first()
+    if existing_user:
+        existing_user.total_orders += 1
+    else:
+        new_user = models.User(
+            full_name=order_data.customer_name,
+            email=order_data.customer_email,
+            phone=order_data.customer_phone,
+            hospital_name=order_data.hospital_clinic_name or "Individual Buyer",
+            role="Purchaser",
+            status="Active",
+            total_orders=1
+        )
+        db.add(new_user)
+
     db.commit()
     db.refresh(new_order)
     return new_order
 
 @app.get("/api/orders/track/{order_number}")
 def track_order(order_number: str, db: Session = Depends(get_db)):
-    order = db.query(models.Order).filter(models.Order.order_number == order_number.strip().upper()).first()
+    clean_num = order_number.strip().upper()
+    order = db.query(models.Order).filter(models.Order.order_number == clean_num).first()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found. Please verify your order number (e.g. HS-2026-XXXX)")
+        # Also allow search by phone or tracking number
+        order = db.query(models.Order).filter(
+            or_(
+                models.Order.customer_phone.ilike(f"%{clean_num}%"),
+                models.Order.tracking_number.ilike(f"%{clean_num}%")
+            )
+        ).first()
+
+    if not order:
+        raise HTTPException(status_code=404, detail="Shipment not found. Please verify your order number (e.g. HS-2026-XXXX)")
     return order
 
 @app.get("/api/admin/orders")
@@ -486,7 +569,8 @@ def get_admin_orders(
                 models.Order.customer_email.ilike(s_fmt),
                 models.Order.hospital_clinic_name.ilike(s_fmt),
                 models.Order.city.ilike(s_fmt),
-                models.Order.tracking_number.ilike(s_fmt)
+                models.Order.tracking_number.ilike(s_fmt),
+                models.Order.transaction_ref.ilike(s_fmt)
             )
         )
 
@@ -514,6 +598,10 @@ def update_order_status(id: int, payload: schemas.OrderStatusUpdate, db: Session
         order.tracking_courier = payload.tracking_courier
     if payload.tracking_number is not None:
         order.tracking_number = payload.tracking_number
+    if payload.payment_proof_image is not None:
+        order.payment_proof_image = payload.payment_proof_image
+    if payload.transaction_ref is not None:
+        order.transaction_ref = payload.transaction_ref
     if payload.notes is not None:
         order.notes = payload.notes
 
@@ -537,18 +625,20 @@ def get_order_invoice(id: int, db: Session = Depends(get_db)):
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    # Build GST Breakdown (CGST 6% + SGST 6% or IGST 12%)
     half_tax = round(order.tax_amount / 2, 2)
+    rate = order.exchange_rate or 280.0
 
     invoice_data = {
         "invoice_number": f"INV-{order.order_number.replace('HS-', '')}",
         "invoice_date": order.created_at.strftime("%d-%b-%Y"),
+        "currency": order.currency or "PKR",
+        "exchange_rate": rate,
         "seller": {
             "name": "Hospital Store Pvt. Ltd.",
-            "address": "Plot 42, Okhla Industrial Area, Phase III, New Delhi 110020",
-            "gstin": "07AAECH7890M1Z8",
-            "pan": "AAECH7890M",
-            "phone": "+91 8000 467 786",
+            "address": "Main Commercial Medical Boulevard, Shahrah-e-Faisal, Karachi 75350",
+            "gstin": "PK-HST-982104-M",
+            "pan": "NTN-4921049-1",
+            "phone": "+92 300 1234567 / 021 34567890",
             "email": "billing@hospitalstore.com"
         },
         "buyer": {
@@ -557,7 +647,7 @@ def get_order_invoice(id: int, db: Session = Depends(get_db)):
             "address": f"{order.shipping_address}, {order.city}, {order.state} - {order.postal_code}",
             "phone": order.customer_phone,
             "email": order.customer_email,
-            "gstin": order.gstin or "Unregistered / Consumer"
+            "gstin": order.gstin or "NTN / General Consumer"
         },
         "order_details": {
             "order_number": order.order_number,
@@ -565,6 +655,8 @@ def get_order_invoice(id: int, db: Session = Depends(get_db)):
             "payment_method": order.payment_method,
             "payment_status": order.payment_status,
             "dispatch_status": order.order_status,
+            "payment_proof_image": order.payment_proof_image,
+            "transaction_ref": order.transaction_ref,
             "courier": order.tracking_courier,
             "tracking_number": order.tracking_number
         },
@@ -572,29 +664,73 @@ def get_order_invoice(id: int, db: Session = Depends(get_db)):
             {
                 "id": it.id,
                 "name": it.product_name,
-                "hsn": "9018", # Medical instruments HSN code
+                "hsn": "9018",
                 "qty": it.quantity,
-                "unit_price": it.unit_price,
+                "unit_price_pkr": it.unit_price,
+                "unit_price_usd": round(it.unit_price / rate, 2),
+                "total_price_pkr": it.total_price,
+                "total_price_usd": round(it.total_price / rate, 2),
                 "taxable_value": it.total_price,
-                "cgst_rate": "6%",
                 "cgst_amount": round(it.total_price * 0.06, 2),
-                "sgst_rate": "6%",
                 "sgst_amount": round(it.total_price * 0.06, 2),
                 "total": round(it.total_price * 1.12, 2)
             }
             for it in order.items
         ],
         "summary": {
-            "subtotal": order.subtotal,
-            "cgst": half_tax,
-            "sgst": half_tax,
-            "total_tax": order.tax_amount,
-            "shipping_fee": order.shipping_fee,
-            "discount": order.discount_amount,
-            "grand_total": order.total_amount
+            "subtotal_pkr": order.subtotal,
+            "subtotal_usd": round(order.subtotal / rate, 2),
+            "cgst_pkr": half_tax,
+            "sgst_pkr": half_tax,
+            "total_tax_pkr": order.tax_amount,
+            "total_tax_usd": round(order.tax_amount / rate, 2),
+            "shipping_fee_pkr": order.shipping_fee,
+            "discount_pkr": order.discount_amount,
+            "grand_total_pkr": order.total_amount,
+            "grand_total_usd": round(order.total_amount / rate, 2)
         }
     }
     return invoice_data
+
+
+# ==========================================
+# USER MANAGEMENT API (Admin Console)
+# ==========================================
+
+@app.get("/api/admin/users")
+def get_users(db: Session = Depends(get_db)):
+    users = db.query(models.User).order_by(models.User.created_at.desc()).all()
+    return users
+
+@app.post("/api/admin/users", status_code=status.HTTP_201_CREATED)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+
+    new_user = models.User(**user.dict())
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@app.patch("/api/admin/users/{id}/status")
+def toggle_user_status(id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.status = "Suspended" if user.status == "Active" else "Active"
+    db.commit()
+    return user
+
+@app.delete("/api/admin/users/{id}")
+def delete_user(id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    return {"message": "User deleted successfully"}
 
 
 # ==========================================
@@ -677,22 +813,21 @@ def delete_inquiry(id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/admin/analytics/dashboard")
 def get_dashboard_analytics(db: Session = Depends(get_db)):
-    total_rev = db.query(func.sum(models.Order.total_amount)).filter(models.Order.payment_status == "Paid").scalar() or 0.0
+    total_rev = db.query(func.sum(models.Order.total_amount)).filter(models.Order.payment_status.ilike("%paid%")).scalar() or 0.0
     total_orders = db.query(models.Order).count()
     pending_orders = db.query(models.Order).filter(models.Order.order_status.in_(["Pending", "Processing", "Pending Confirmation"])).count()
     active_products = db.query(models.Product).count()
+    total_users = db.query(models.User).count()
     low_stock_count = db.query(models.Product).filter(models.Product.stock_quantity <= 10).count()
     total_inquiries = db.query(models.CustomerInquiry).count() + db.query(models.QuoteRequest).count()
 
     recent_orders = db.query(models.Order).order_by(models.Order.created_at.desc()).limit(6).all()
 
-    # Sales by status
     status_counts = {}
     for st in ["Processing", "Dispatched", "Delivered", "Cancelled"]:
         cnt = db.query(models.Order).filter(models.Order.order_status.ilike(f"%{st}%")).count()
         status_counts[st] = cnt
 
-    # Top categories by products
     top_cats = []
     cats = db.query(models.Category).all()
     for c in cats:
@@ -702,28 +837,27 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
             "product_count": cnt,
             "icon": c.icon_name
         })
-    top_cats = sorted(top_cats, key=lambda x: x["product_count"], reverse=True)[:5]
+    top_cats = sorted(top_cats, key=lambda x: x["product_count"], reverse=True)[:6]
 
     return {
         "total_revenue": round(total_rev, 2),
+        "total_revenue_usd": round(total_rev / 280.0, 2),
         "total_orders": total_orders,
         "pending_orders": pending_orders,
         "active_products": active_products,
+        "total_users": total_users,
         "low_stock_count": low_stock_count,
         "total_inquiries": total_inquiries,
         "recent_orders": recent_orders,
         "sales_by_status": status_counts,
         "top_categories": top_cats,
-        "monthly_growth_rate": "+18.4%"
+        "monthly_growth_rate": "+22.8%"
     }
 
 
 # ==========================================
 # SERVE REACT FRONTEND (SPA)
 # ==========================================
-import os
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
@@ -734,10 +868,9 @@ if os.path.exists(FRONTEND_DIST):
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        if full_path.startswith("api"):
-            raise HTTPException(status_code=404, detail="API endpoint not found")
+        if full_path.startswith("api") or full_path.startswith("uploads"):
+            raise HTTPException(status_code=404, detail="Resource not found")
         file_path = os.path.join(FRONTEND_DIST, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
-

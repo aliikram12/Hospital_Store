@@ -105,8 +105,11 @@ class Order(Base):
     city = Column(String(100), nullable=False)
     state = Column(String(100), nullable=False)
     postal_code = Column(String(30), nullable=False)
-    country = Column(String(50), default="India")
+    country = Column(String(50), default="Pakistan")
     gstin = Column(String(50), default="")
+
+    currency = Column(String(10), default="PKR") # PKR or USD
+    exchange_rate = Column(Float, default=280.0) # PKR per USD
 
     subtotal = Column(Float, default=0.0)
     tax_amount = Column(Float, default=0.0)
@@ -115,10 +118,13 @@ class Order(Base):
     total_amount = Column(Float, default=0.0)
 
     order_status = Column(String(50), default="Processing")  # Pending, Processing, Dispatched, Delivered, Cancelled
-    payment_status = Column(String(50), default="Paid")      # Paid, Pending, Failed, Refunded
-    payment_method = Column(String(100), default="Credit/Debit Card")
+    payment_status = Column(String(50), default="Pending Verification")  # Paid, Pending Verification, Failed, Refunded
+    payment_method = Column(String(100), default="Cash on Delivery") # Cash on Delivery (COD) OR QR Code / Bank Transfer
     
-    tracking_courier = Column(String(100), default="BlueDart Health Express")
+    payment_proof_image = Column(String(500), default="") # Receipt Screenshot URL
+    transaction_ref = Column(String(100), default="")    # Bank TID / JazzCash / EasyPaisa Trx ID
+
+    tracking_courier = Column(String(100), default="TCS Express Medical Cargo")
     tracking_number = Column(String(100), default="")
     notes = Column(Text, default="")
 
@@ -175,6 +181,20 @@ class CustomerInquiry(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(150), nullable=False)
+    email = Column(String(150), unique=True, index=True, nullable=False)
+    phone = Column(String(50), default="")
+    hospital_name = Column(String(200), default="")
+    role = Column(String(50), default="Hospital Admin") # Hospital Admin, Procurement Officer, Doctor, Store Manager
+    status = Column(String(50), default="Active")       # Active, Suspended
+    total_orders = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
 
@@ -182,4 +202,3 @@ class Setting(Base):
     key = Column(String(100), unique=True, index=True, nullable=False)
     value = Column(Text, default="")
     description = Column(String(255), default="")
-

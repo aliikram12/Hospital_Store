@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Trash2, ShoppingBag, Plus, Minus, ArrowRight, ShieldCheck, Truck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
-import { formatPrice } from '../utils/helpers';
+import { useCurrency } from '../context/CurrencyContext';
 
 export default function CartDrawer({ onNavigate }) {
   const {
@@ -16,6 +16,8 @@ export default function CartDrawer({ onNavigate }) {
     totalAmount,
     cartCount
   } = useCart();
+
+  const { formatPrice, currency } = useCurrency();
 
   if (!isCartOpen) return null;
 
@@ -37,7 +39,7 @@ export default function CartDrawer({ onNavigate }) {
             <ShoppingBag className="w-5 h-5 text-sky-600" />
             <h3 className="text-base font-bold text-slate-900">Hospital Equipment Cart</h3>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">
-              {cartCount} items
+              {cartCount} units
             </span>
           </div>
           <button
@@ -54,8 +56,8 @@ export default function CartDrawer({ onNavigate }) {
             <span className="flex items-center gap-1.5">
               <Truck className="w-4 h-4 text-sky-600" />
               {freeShippingDiff > 0
-                ? `Add ${formatPrice(freeShippingDiff)} more for FREE Pan-India Freight`
-                : '🎉 You have unlocked FREE Express Biomedical Delivery!'}
+                ? `Add ${formatPrice(freeShippingDiff)} more for FREE Delivery`
+                : '🎉 You have unlocked FREE Express Cargo Delivery!'}
             </span>
           </div>
           <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
@@ -160,7 +162,7 @@ export default function CartDrawer({ onNavigate }) {
                 <span className="font-semibold text-slate-800">{formatPrice(taxAmount)}</span>
               </div>
               <div className="flex justify-between text-slate-600">
-                <span>Biomedical Freight Logistics</span>
+                <span>Biomedical Cargo Logistics</span>
                 <span className="font-semibold text-slate-800">
                   {shippingFee === 0 ? (
                     <span className="text-emerald-600 font-bold">FREE</span>
@@ -171,7 +173,7 @@ export default function CartDrawer({ onNavigate }) {
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between text-sm font-black text-slate-900">
                 <span>Total Amount</span>
-                <span className="text-sky-700">{formatPrice(totalAmount)}</span>
+                <span className="text-sky-700">{formatPrice(totalAmount, true)}</span>
               </div>
             </div>
 
@@ -193,4 +195,3 @@ export default function CartDrawer({ onNavigate }) {
     </div>
   );
 }
-
